@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HabitFlow — Daily Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Mobile Top Bar -->
+  <header class="topbar">
+    <button class="hamburger" id="hamburger" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="topbar-logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">Habit Tracker</span>
+    </div>
+    <button class="btn-primary topbar-add" id="topbar-add">+</button>
+  </header>
+
+  <!-- Sidebar Overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">HabitFlow</span>
+      <button class="sidebar-close" id="sidebar-close" aria-label="Close menu">✕</button>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-page="today">
+        <span class="nav-icon">☀</span> Today
+      </button>
+      <button class="nav-item" data-page="habits">
+        <span class="nav-icon">✦</span> My Habits
+      </button>
+      <button class="nav-item" data-page="progress">
+        <span class="nav-icon">◎</span> Progress
+      </button>
+    </nav>
+    <div class="sidebar-date" id="sidebar-date"></div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- TODAY PAGE -->
+    <section class="page active" id="page-today">
+      <div class="page-header">
+        <div>
+          <p class="page-eyebrow">Daily Check-in</p>
+          <h1 class="page-title">Good <span id="greeting-time"></span> 👋</h1>
+        </div>
+        <button class="btn-primary desktop-add" id="open-add-modal">+ Add Habit</button>
+      </div>
+      <div class="summary-cards" id="today-summary"></div>
+      <div class="section-label">Today's Habits</div>
+      <div class="habit-list" id="today-habits"></div>
+    </section>
+
+    <!-- HABITS PAGE -->
+    <section class="page" id="page-habits">
+      <div class="page-header">
+        <div>
+          <p class="page-eyebrow">Manage</p>
+          <h1 class="page-title">My Habits</h1>
+        </div>
+        <button class="btn-primary desktop-add" id="open-add-modal-2">+ Add Habit</button>
+      </div>
+      <div class="habit-grid" id="habits-grid"></div>
+      <div class="empty-state" id="habits-empty" style="display:none">
+        <div class="empty-icon">✦</div>
+        <p>No habits yet. Add your first one!</p>
+      </div>
+    </section>
+
+    <!-- PROGRESS PAGE -->
+    <section class="page" id="page-progress">
+      <div class="page-header">
+        <div>
+          <p class="page-eyebrow">Analytics</p>
+          <h1 class="page-title">Your Progress</h1>
+        </div>
+      </div>
+      <div class="summary-cards" id="progress-summary"></div>
+      <div class="section-label">7-Day Activity</div>
+      <div class="progress-charts" id="progress-charts"></div>
+      <div class="section-label" style="margin-top:2rem;">Completion Rates</div>
+      <div class="completion-bars" id="completion-bars"></div>
+    </section>
+  </main>
+
+  <!-- ADD / EDIT MODAL -->
+  <div class="modal-overlay" id="habit-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-title">New Habit</h2>
+        <button class="modal-close" id="close-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Habit Name</label>
+          <input type="text" id="habit-name" placeholder="e.g. Morning run" maxlength="50"/>
+        </div>
+        <div class="form-group">
+          <label>Pick an Icon</label>
+          <div class="icon-grid" id="icon-picker"></div>
+        </div>
+        <div class="form-group">
+          <label>Color</label>
+          <div class="color-grid" id="color-picker"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="cancel-modal">Cancel</button>
+        <button class="btn-primary" id="save-habit">Save Habit</button>
+      </div>
+      <input type="hidden" id="edit-habit-id"/>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
