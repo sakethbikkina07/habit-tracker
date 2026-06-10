@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HabitFlow — {% if page == 'login' %}Sign In{% else %}Create Account{% endif %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #18181f;
+      --surface-2: #202028;
+      --border: rgba(255,255,255,0.07);
+      --text: #f0f0f5;
+      --text-2: #9090a8;
+      --text-3: #5a5a72;
+      --accent: #7c6ef8;
+      --accent-light: rgba(124,110,248,0.15);
+      --green: #34d399;
+      --red: #f87171;
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── Background decoration ── */
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .bg-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bg-orb-1 {
+      width: 500px; height: 500px;
+      background: #7c6ef8;
+      top: -150px; left: -150px;
+    }
+
+    .bg-orb-2 {
+      width: 400px; height: 400px;
+      background: #34d399;
+      bottom: -100px; right: -100px;
+    }
+
+    /* ── Auth card ── */
+    .auth-card {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 40px 36px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+      animation: fadeUp 0.3s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Logo ── */
+    .auth-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+
+    .logo-icon {
+      font-size: 26px;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .logo-text {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Heading ── */
+    .auth-heading { margin-bottom: 6px; }
+    .auth-heading h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 26px;
+      font-weight: 400;
+      color: var(--text);
+      letter-spacing: -0.4px;
+    }
+    .auth-sub {
+      font-size: 14px;
+      color: var(--text-2);
+      margin-bottom: 28px;
+    }
+
+    /* ── Tab switcher ── */
+    .auth-tabs {
+      display: flex;
+      background: var(--surface-2);
+      border-radius: var(--radius-sm);
+      padding: 4px;
+      margin-bottom: 28px;
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      background: none;
+      color: var(--text-2);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .auth-tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    /* ── Form ── */
+    .auth-form { display: flex; flex-direction: column; gap: 16px; }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+
+    .form-group label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-3);
+      font-weight: 600;
+    }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      font-size: 15px;
+      color: var(--text-3);
+      pointer-events: none;
+    }
+
+    .form-group input {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px 12px 40px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-group input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    .form-group input::placeholder { color: var(--text-3); }
+
+    /* Password toggle */
+    .pw-toggle {
+      position: absolute;
+      right: 12px;
+      background: none;
+      border: none;
+      color: var(--text-3);
+      cursor: pointer;
+      font-size: 15px;
+      padding: 4px;
+      transition: color 0.15s;
+    }
+    .pw-toggle:hover { color: var(--text-2); }
+
+    /* Error message */
+    .auth-error {
+      display: none;
+      background: rgba(248,113,113,0.1);
+      border: 1px solid rgba(248,113,113,0.25);
+      color: var(--red);
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      margin-top: 4px;
+    }
+    .auth-error.show { display: block; }
+
+    /* Submit button */
+    .btn-submit {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      font-family: 'Inter', sans-serif;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-submit:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .btn-submit:active:not(:disabled) { transform: translateY(0); }
+    .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* Spinner inside button */
+    .btn-spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Switch link */
+    .auth-switch {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--text-2);
+    }
+
+    .auth-switch a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .auth-switch a:hover { text-decoration: underline; }
+
+    /* Password strength */
+    .pw-strength {
+      display: none;
+      margin-top: 6px;
+    }
+    .pw-strength.show { display: block; }
+    .pw-bar-bg {
+      height: 4px;
+      background: var(--surface-2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .pw-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s, background 0.3s;
+    }
+    .pw-label { font-size: 11px; color: var(--text-3); }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      .auth-card { padding: 28px 22px; border-radius: 18px; }
+      .auth-heading h1 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">HabitFlow</span>
+    </div>
+
+    <!-- Tab switcher -->
+    <div class="auth-tabs">
+      <button class="auth-tab {% if page == 'login' %}active{% endif %}" id="tab-login">Sign In</button>
+      <button class="auth-tab {% if page == 'register' %}active{% endif %}" id="tab-register">Create Account</button>
+    </div>
+
+    <!-- Error -->
+    <div class="auth-error" id="auth-error"></div>
+
+    <!-- LOGIN FORM -->
+    <div id="form-login" {% if page == 'register' %}style="display:none"{% endif %}>
+      <div class="auth-heading">
+        <h1>Welcome back</h1>
+      </div>
+      <p class="auth-sub">Sign in to continue your streak 🔥</p>
+      <div class="auth-form">
+        <div class="form-group">
+          <label>Username or Email</label>
+          <div class="input-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="login-identifier" placeholder="Enter username or email" autocomplete="username"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="login-password" placeholder="Enter your password" autocomplete="current-password"/>
+            <button type="button" class="pw-toggle" onclick="togglePw('login-password', this)">👁</button>
+          </div>
+        </div>
+        <button class="btn-submit" id="btn-login">
+          <span class="btn-spinner" id="spin-login"></span>
+          Sign In
+        </button>
+      </div>
+    </div>
+
+    <!-- REGISTER FORM -->
+    <div id="form-register" {% if page == 'login' %}style="display:none"{% endif %}>
+      <div class="auth-heading">
+        <h1>Create account</h1>
+      </div>
+      <p class="auth-sub">Start building better habits today ✦</p>
+      <div class="auth-form">
+        <div class="form-group">
+          <label>Username</label>
+          <div class="input-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="reg-username" placeholder="Choose a username" autocomplete="username"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <div class="input-wrap">
+            <span class="input-icon">✉</span>
+            <input type="email" id="reg-email" placeholder="your@email.com" autocomplete="email"/>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="reg-password" placeholder="Min 6 characters" autocomplete="new-password" oninput="checkStrength(this.value)"/>
+            <button type="button" class="pw-toggle" onclick="togglePw('reg-password', this)">👁</button>
+          </div>
+          <div class="pw-strength" id="pw-strength">
+            <div class="pw-bar-bg"><div class="pw-bar-fill" id="pw-bar"></div></div>
+            <div class="pw-label" id="pw-label"></div>
+          </div>
+        </div>
+        <button class="btn-submit" id="btn-register">
+          <span class="btn-spinner" id="spin-register"></span>
+          Create Account
+        </button>
+      </div>
+    </div>
+
+    <div class="auth-switch" id="auth-switch">
+      {% if page == 'login' %}
+        Don't have an account? <a href="#" id="switch-link">Sign up free</a>
+      {% else %}
+        Already have an account? <a href="#" id="switch-link">Sign in</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+    let currentPage = '{{ page }}';
+
+    // ── Tab switch ──
+    function showForm(which) {
+      currentPage = which;
+      document.getElementById('form-login').style.display    = which === 'login'    ? '' : 'none';
+      document.getElementById('form-register').style.display = which === 'register' ? '' : 'none';
+      document.getElementById('tab-login').classList.toggle('active', which === 'login');
+      document.getElementById('tab-register').classList.toggle('active', which === 'register');
+      document.getElementById('auth-switch').innerHTML = which === 'login'
+        ? `Don't have an account? <a href="#" id="switch-link">Sign up free</a>`
+        : `Already have an account? <a href="#" id="switch-link">Sign in</a>`;
+      document.getElementById('switch-link').addEventListener('click', e => { e.preventDefault(); showForm(which === 'login' ? 'register' : 'login'); });
+      clearError();
+    }
+
+    document.getElementById('tab-login').addEventListener('click', () => showForm('login'));
+    document.getElementById('tab-register').addEventListener('click', () => showForm('register'));
+    document.getElementById('switch-link').addEventListener('click', e => { e.preventDefault(); showForm(currentPage === 'login' ? 'register' : 'login'); });
+
+    // Enter key submits
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        if (currentPage === 'login') doLogin();
+        else doRegister();
+      }
+    });
+
+    // ── Error ──
+    function showError(msg) {
+      const el = document.getElementById('auth-error');
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+    function clearError() {
+      document.getElementById('auth-error').classList.remove('show');
+    }
+
+    // ── Loading state ──
+    function setLoading(btnId, spinId, loading) {
+      const btn = document.getElementById(btnId);
+      const spin = document.getElementById(spinId);
+      btn.disabled = loading;
+      spin.style.display = loading ? 'block' : 'none';
+    }
+
+    // ── Password toggle ──
+    function togglePw(inputId, btn) {
+      const inp = document.getElementById(inputId);
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+      btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+    }
+
+    // ── Password strength ──
+    function checkStrength(val) {
+      const wrap = document.getElementById('pw-strength');
+      const bar  = document.getElementById('pw-bar');
+      const lbl  = document.getElementById('pw-label');
+      if (!val) { wrap.classList.remove('show'); return; }
+      wrap.classList.add('show');
+      let score = 0;
+      if (val.length >= 6)  score++;
+      if (val.length >= 10) score++;
+      if (/[A-Z]/.test(val)) score++;
+      if (/[0-9]/.test(val)) score++;
+      if (/[^A-Za-z0-9]/.test(val)) score++;
+      const levels = [
+        { w: '20%',  bg: '#f87171', label: 'Too weak' },
+        { w: '40%',  bg: '#fb923c', label: 'Weak' },
+        { w: '60%',  bg: '#fbbf24', label: 'Fair' },
+        { w: '80%',  bg: '#34d399', label: 'Strong' },
+        { w: '100%', bg: '#34d399', label: 'Very strong' },
+      ];
+      const l = levels[Math.max(0, score - 1)];
+      bar.style.width = l.w;
+      bar.style.background = l.bg;
+      lbl.textContent = l.label;
+      lbl.style.color = l.bg;
+    }
+
+    // ── Login ──
+    document.getElementById('btn-login').addEventListener('click', doLogin);
+    async function doLogin() {
+      clearError();
+      const identifier = document.getElementById('login-identifier').value.trim();
+      const password   = document.getElementById('login-password').value;
+      if (!identifier || !password) { showError('Please fill in all fields.'); return; }
+      setLoading('btn-login', 'spin-login', true);
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || 'Login failed'); return; }
+        window.location.href = '/';
+      } catch (err) {
+        showError('Network error. Please try again.');
+      } finally {
+        setLoading('btn-login', 'spin-login', false);
+      }
+    }
+
+    // ── Register ──
+    document.getElementById('btn-register').addEventListener('click', doRegister);
+    async function doRegister() {
+      clearError();
+      const username = document.getElementById('reg-username').value.trim();
+      const email    = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+      if (!username || !email || !password) { showError('Please fill in all fields.'); return; }
+      setLoading('btn-register', 'spin-register', true);
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || 'Registration failed'); return; }
+        window.location.href = '/';
+      } catch (err) {
+        showError('Network error. Please try again.');
+      } finally {
+        setLoading('btn-register', 'spin-register', false);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -17,47 +17,20 @@ document.addEventListener('DOMContentLoaded', () => {
   bindNav();
   bindModal();
   bindSidebar();
+  loadUser();
   loadPage('today');
 });
 
-// ─── SIDEBAR (hamburger) ───
-function bindSidebar() {
-  const hamburger = document.getElementById('hamburger');
-  const sidebar = document.getElementById('sidebar');
-  const overlay = document.getElementById('sidebar-overlay');
-  const closeBtn = document.getElementById('sidebar-close');
-  const topbarAdd = document.getElementById('topbar-add');
-
-  function openSidebar() {
-    sidebar.classList.add('open');
-    hamburger.classList.add('open');
-    overlay.classList.add('visible');
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeSidebar() {
-    sidebar.classList.remove('open');
-    hamburger.classList.remove('open');
-    overlay.classList.remove('visible');
-    document.body.style.overflow = '';
-  }
-
-  hamburger.addEventListener('click', () => {
-    sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
-  });
-
-  closeBtn.addEventListener('click', closeSidebar);
-  overlay.addEventListener('click', closeSidebar);
-
-  // Close sidebar on nav item click (mobile)
-  document.querySelectorAll('.nav-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (window.innerWidth <= 768) closeSidebar();
-    });
-  });
-
-  // Topbar + button opens add modal
-  if (topbarAdd) topbarAdd.addEventListener('click', openAddModal);
+// ─── LOAD USER INFO ───
+async function loadUser() {
+  try {
+    const data = await apiFetch('/api/auth/me');
+    const name = data.username || 'User';
+    const el = document.getElementById('user-name');
+    const av = document.getElementById('user-avatar');
+    if (el) el.textContent = name;
+    if (av) av.textContent = name.charAt(0).toUpperCase();
+  } catch (e) {}
 }
 
 // ─── GREETING ───
@@ -96,9 +69,56 @@ function loadPage(page) {
 async function apiFetch(path, opts = {}) {
   const res = await fetch(API + path, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     ...opts
   });
+  if (res.status === 401) {
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
   return res.json();
+}
+
+// ─── SIDEBAR (hamburger + logout) ───
+function bindSidebar() {
+  const hamburger = document.getElementById('hamburger');
+  const sidebar    = document.getElementById('sidebar');
+  const overlay    = document.getElementById('sidebar-overlay');
+  const closeBtn   = document.getElementById('sidebar-close');
+  const topbarAdd  = document.getElementById('topbar-add');
+  const logoutBtn  = document.getElementById('logout-btn');
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    hamburger.classList.add('open');
+    overlay.classList.add('visible');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    hamburger.classList.remove('open');
+    overlay.classList.remove('visible');
+    document.body.style.overflow = '';
+  }
+
+  hamburger.addEventListener('click', () => sidebar.classList.contains('open') ? closeSidebar() : openSidebar());
+  closeBtn.addEventListener('click', closeSidebar);
+  overlay.addEventListener('click', closeSidebar);
+
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
+  });
+
+  if (topbarAdd) topbarAdd.addEventListener('click', openAddModal);
+
+  // Logout
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      window.location.href = '/login';
+    });
+  }
 }
 
 // ─── TODAY PAGE ───
@@ -109,12 +129,11 @@ async function renderToday() {
 }
 
 function renderTodaySummary(habits) {
-  const done = habits.filter(h => h.done_today).length;
+  const done  = habits.filter(h => h.done_today).length;
   const total = habits.length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const pct   = total ? Math.round((done / total) * 100) : 0;
   const bestStreak = habits.reduce((m, h) => Math.max(m, h.streak), 0);
-  const el = document.getElementById('today-summary');
-  el.innerHTML = `
+  document.getElementById('today-summary').innerHTML = `
     <div class="summary-card">
       <div class="card-label">Completed</div>
       <div class="card-value green">${done}/${total}</div>
@@ -166,24 +185,15 @@ function renderTodayList(habits) {
 }
 
 async function toggleHabit(id, btn) {
-  const row = document.getElementById('row-' + id);
   const data = await apiFetch(`/api/habits/${id}/toggle`, { method: 'POST', body: JSON.stringify({}) });
-  if (data.done) {
-    row.classList.add('completed');
-    btn.innerHTML = '✓';
-    showToast('✓ Habit marked complete!');
-  } else {
-    row.classList.remove('completed');
-    btn.innerHTML = '';
-    showToast('Habit unmarked');
-  }
   renderToday();
+  showToast(data.done ? '✓ Habit complete!' : 'Habit unmarked');
 }
 
 // ─── HABITS PAGE ───
 async function renderHabits() {
   const habits = await apiFetch('/api/habits');
-  const grid = document.getElementById('habits-grid');
+  const grid  = document.getElementById('habits-grid');
   const empty = document.getElementById('habits-empty');
   if (!habits.length) {
     grid.innerHTML = '';
@@ -228,12 +238,9 @@ async function deleteHabit(id) {
 
 // ─── PROGRESS PAGE ───
 async function renderProgress() {
-  const stats = await apiFetch('/api/stats');
-  const habits = await apiFetch('/api/habits');
+  const [stats, habits] = await Promise.all([apiFetch('/api/stats'), apiFetch('/api/habits')]);
 
-  // Summary
-  const el = document.getElementById('progress-summary');
-  el.innerHTML = `
+  document.getElementById('progress-summary').innerHTML = `
     <div class="summary-card">
       <div class="card-label">Total Habits</div>
       <div class="card-value accent">${stats.total_habits}</div>
@@ -256,9 +263,7 @@ async function renderProgress() {
     </div>
   `;
 
-  // 7-day charts
   const chartsEl = document.getElementById('progress-charts');
-  const today = new Date();
   if (!stats.per_habit.length) {
     chartsEl.innerHTML = `<div class="empty-state" style="padding:40px"><div class="empty-icon">◎</div><p>Add habits to see analytics</p></div>`;
   } else {
@@ -271,15 +276,14 @@ async function renderProgress() {
           <span>${h.name}</span>
         </div>
         <div class="chart-week">
-          ${h.week.map((d, i) => {
+          ${h.week.map(d => {
             const date = new Date(d.date + 'T00:00:00');
-            const dayLabel = DAYS[date.getDay()];
             return `
               <div class="chart-bar-col">
                 <div class="chart-bar ${d.done ? 'done' : ''}" style="${d.done ? 'background:'+h.color : ''}">
                   ${d.done ? '✓' : ''}
                 </div>
-                <div class="chart-day-label">${dayLabel}</div>
+                <div class="chart-day-label">${DAYS[date.getDay()]}</div>
               </div>
             `;
           }).join('')}
@@ -288,13 +292,7 @@ async function renderProgress() {
     `).join('');
   }
 
-  // Completion bars
-  const barsEl = document.getElementById('completion-bars');
-  if (!habits.length) {
-    barsEl.innerHTML = '';
-    return;
-  }
-  barsEl.innerHTML = habits.map(h => `
+  document.getElementById('completion-bars').innerHTML = habits.map(h => `
     <div class="comp-row">
       <div class="comp-row-header">
         <div class="comp-name">
@@ -320,6 +318,7 @@ function bindModal() {
   document.getElementById('habit-modal').addEventListener('click', e => {
     if (e.target.id === 'habit-modal') closeModal();
   });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 }
 
 function openAddModal() {
@@ -331,7 +330,7 @@ function openAddModal() {
   refreshIconPicker();
   refreshColorPicker();
   document.getElementById('habit-modal').classList.add('open');
-  document.getElementById('habit-name').focus();
+  setTimeout(() => document.getElementById('habit-name').focus(), 100);
 }
 
 function openEditModal(habit) {
@@ -350,10 +349,10 @@ function closeModal() {
 }
 
 async function saveHabit() {
-  const name = document.getElementById('habit-name').value.trim();
+  const name   = document.getElementById('habit-name').value.trim();
   if (!name) { document.getElementById('habit-name').focus(); return; }
   const editId = document.getElementById('edit-habit-id').value;
-  const body = { name, icon: selectedIcon, color: selectedColor, target_days: 7 };
+  const body   = { name, icon: selectedIcon, color: selectedColor, target_days: 7 };
   if (editId) {
     await apiFetch(`/api/habits/${editId}`, { method: 'PUT', body: JSON.stringify(body) });
     showToast('Habit updated!');
@@ -362,22 +361,19 @@ async function saveHabit() {
     showToast('Habit added!');
   }
   closeModal();
-  // Refresh current active page
   const active = document.querySelector('.page.active').id.replace('page-', '');
   loadPage(active);
 }
 
 // ─── ICON & COLOR PICKERS ───
 function renderIconPicker() {
-  const el = document.getElementById('icon-picker');
-  el.innerHTML = ICONS.map(ic => `
+  document.getElementById('icon-picker').innerHTML = ICONS.map(ic => `
     <button class="icon-opt ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}" onclick="selectIcon(this,'${ic}')">${ic}</button>
   `).join('');
 }
 
 function renderColorPicker() {
-  const el = document.getElementById('color-picker');
-  el.innerHTML = COLORS.map(c => `
+  document.getElementById('color-picker').innerHTML = COLORS.map(c => `
     <div class="color-opt ${c === selectedColor ? 'selected' : ''}" style="background:${c}" data-color="${c}" onclick="selectColor(this,'${c}')"></div>
   `).join('');
 }
