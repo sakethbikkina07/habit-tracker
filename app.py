@@ -3,15 +3,34 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
-import secrets
 from datetime import date, timedelta
 from functools import wraps
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
-CORS(app, supports_credentials=True)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "habits.db")
+# ── SECRET KEY ──────────────────────────────────────────────────────────────
+# On Render: add SECRET_KEY as an environment variable in the dashboard.
+# A hardcoded random key (secrets.token_hex) breaks every session on redeploy.
+app.secret_key = os.environ.get("SECRET_KEY", "dev-fallback-change-me")
+
+# Session cookie settings that work correctly behind Render's HTTPS proxy
+app.config["SESSION_COOKIE_SECURE"]   = True   # only send over HTTPS
+app.config["SESSION_COOKIE_HTTPONLY"] = True   # block JS access
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# ── DATABASE PATH ────────────────────────────────────────────────────────────
+# Render's free tier has an ephemeral filesystem — the DB resets on each
+# redeploy unless you attach a Render Disk.
+# To attach a disk: Render dashboard → your service → Disks → Add Disk
+#   Mount path: /data   (or any path you choose)
+# Then set env var  DB_PATH=/data/habits.db  in Render dashboard.
+# Without a disk, fall back to writing next to app.py (works for testing).
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "habits.db")
+)
+
+CORS(app, supports_credentials=True)
 
 # ─── DB ───
 def get_db():
@@ -92,7 +111,7 @@ def register_page():
 def register():
     data = request.json or {}
     username = data.get("username", "").strip()
-    email = data.get("email", "").strip().lower()
+    email    = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
     if not username or not email or not password:
@@ -120,15 +139,16 @@ def register():
     user_id = c.lastrowid
     conn.close()
 
-    session['user_id'] = user_id
+    session.permanent = True
+    session['user_id']  = user_id
     session['username'] = username
     return jsonify({"message": "Account created", "username": username}), 201
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
-    data = request.json or {}
-    identifier = data.get("identifier", "").strip()  # username or email
-    password = data.get("password", "")
+    data       = request.json or {}
+    identifier = data.get("identifier", "").strip()
+    password   = data.get("password", "")
 
     if not identifier or not password:
         return jsonify({"error": "All fields are required"}), 400
@@ -143,7 +163,8 @@ def login():
     if not user or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid username/email or password"}), 401
 
-    session['user_id'] = user['id']
+    session.permanent = True
+    session['user_id']  = user['id']
     session['username'] = user['username']
     return jsonify({"message": "Logged in", "username": user['username']})
 
@@ -162,36 +183,34 @@ def me():
 @app.route("/api/habits", methods=["GET"])
 @login_required
 def get_habits():
-    uid = get_current_user_id()
-    conn = get_db()
-    habits = conn.execute("SELECT * FROM habits WHERE user_id=? ORDER BY created_at", (uid,)).fetchall()
-    today = str(date.today())
+    uid   = get_current_user_id()
+    conn  = get_db()
+    habits = conn.execute(
+        "SELECT * FROM habits WHERE user_id=? ORDER BY created_at", (uid,)
+    ).fetchall()
+    today  = str(date.today())
     result = []
     for h in habits:
-        hid = h["id"]
-        streak = calc_streak(conn, hid, today)
-        total = conn.execute("SELECT COUNT(*) FROM completions WHERE habit_id=?", (hid,)).fetchone()[0]
+        hid       = h["id"]
+        streak    = calc_streak(conn, hid, today)
+        total     = conn.execute("SELECT COUNT(*) FROM completions WHERE habit_id=?", (hid,)).fetchone()[0]
         done_today = conn.execute(
             "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (hid, today)
         ).fetchone() is not None
         week = []
         for i in range(6, -1, -1):
-            d = str(date.today() - timedelta(days=i))
-            done = conn.execute("SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (hid, d)).fetchone() is not None
+            d    = str(date.today() - timedelta(days=i))
+            done = conn.execute(
+                "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (hid, d)
+            ).fetchone() is not None
             week.append({"date": d, "done": done})
         rate = calc_rate(conn, hid, 30)
         result.append({
-            "id": hid,
-            "name": h["name"],
-            "icon": h["icon"],
-            "color": h["color"],
-            "target_days": h["target_days"],
-            "created_at": h["created_at"],
-            "streak": streak,
-            "total": total,
-            "done_today": done_today,
-            "week": week,
-            "rate": rate
+            "id": hid, "name": h["name"], "icon": h["icon"],
+            "color": h["color"], "target_days": h["target_days"],
+            "created_at": h["created_at"], "streak": streak,
+            "total": total, "done_today": done_today,
+            "week": week, "rate": rate
         })
     conn.close()
     return jsonify(result)
@@ -199,15 +218,17 @@ def get_habits():
 @app.route("/api/habits", methods=["POST"])
 @login_required
 def add_habit():
-    uid = get_current_user_id()
+    uid  = get_current_user_id()
     data = request.json
     name = data.get("name", "").strip()
     if not name:
         return jsonify({"error": "Name is required"}), 400
     conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT INTO habits (user_id, name, icon, color, target_days) VALUES (?,?,?,?,?)",
-              (uid, name, data.get("icon","⭐"), data.get("color","#6366f1"), data.get("target_days",7)))
+    c    = conn.cursor()
+    c.execute(
+        "INSERT INTO habits (user_id, name, icon, color, target_days) VALUES (?,?,?,?,?)",
+        (uid, name, data.get("icon","⭐"), data.get("color","#6366f1"), data.get("target_days", 7))
+    )
     conn.commit()
     new_id = c.lastrowid
     conn.close()
@@ -216,16 +237,16 @@ def add_habit():
 @app.route("/api/habits/<int:habit_id>", methods=["PUT"])
 @login_required
 def update_habit(habit_id):
-    uid = get_current_user_id()
+    uid  = get_current_user_id()
     data = request.json
     conn = get_db()
-    # Ensure habit belongs to this user
-    habit = conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone()
-    if not habit:
+    if not conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone():
         conn.close()
         return jsonify({"error": "Not found"}), 404
-    conn.execute("UPDATE habits SET name=?, icon=?, color=?, target_days=? WHERE id=?",
-                 (data["name"], data["icon"], data["color"], data["target_days"], habit_id))
+    conn.execute(
+        "UPDATE habits SET name=?, icon=?, color=?, target_days=? WHERE id=?",
+        (data["name"], data["icon"], data["color"], data["target_days"], habit_id)
+    )
     conn.commit()
     conn.close()
     return jsonify({"message": "Updated"})
@@ -233,10 +254,9 @@ def update_habit(habit_id):
 @app.route("/api/habits/<int:habit_id>", methods=["DELETE"])
 @login_required
 def delete_habit(habit_id):
-    uid = get_current_user_id()
+    uid  = get_current_user_id()
     conn = get_db()
-    habit = conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone()
-    if not habit:
+    if not conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone():
         conn.close()
         return jsonify({"error": "Not found"}), 404
     conn.execute("DELETE FROM completions WHERE habit_id=?", (habit_id,))
@@ -248,13 +268,11 @@ def delete_habit(habit_id):
 @app.route("/api/habits/<int:habit_id>/toggle", methods=["POST"])
 @login_required
 def toggle(habit_id):
-    uid = get_current_user_id()
+    uid  = get_current_user_id()
     data = request.json or {}
-    day = data.get("date", str(date.today()))
+    day  = data.get("date", str(date.today()))
     conn = get_db()
-    # Verify ownership
-    habit = conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone()
-    if not habit:
+    if not conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone():
         conn.close()
         return jsonify({"error": "Not found"}), 404
     existing = conn.execute(
@@ -273,24 +291,24 @@ def toggle(habit_id):
 @app.route("/api/stats")
 @login_required
 def stats():
-    uid = get_current_user_id()
-    conn = get_db()
+    uid   = get_current_user_id()
+    conn  = get_db()
     today = str(date.today())
     total_habits = conn.execute("SELECT COUNT(*) FROM habits WHERE user_id=?", (uid,)).fetchone()[0]
-    done_today = conn.execute(
+    done_today   = conn.execute(
         """SELECT COUNT(DISTINCT c.habit_id) FROM completions c
            JOIN habits h ON c.habit_id=h.id
            WHERE h.user_id=? AND c.completed_date=?""", (uid, today)
     ).fetchone()[0]
-    habits = conn.execute("SELECT id FROM habits WHERE user_id=?", (uid,)).fetchall()
-    rates = [calc_rate(conn, h["id"], 30) for h in habits]
-    avg_rate = round(sum(rates) / len(rates), 1) if rates else 0
+    habits      = conn.execute("SELECT id FROM habits WHERE user_id=?", (uid,)).fetchall()
+    rates       = [calc_rate(conn, h["id"], 30) for h in habits]
+    avg_rate    = round(sum(rates) / len(rates), 1) if rates else 0
     best_streak = max([calc_streak(conn, h["id"], today) for h in habits], default=0)
-    per_habit = []
+    per_habit   = []
     for h in conn.execute("SELECT id, name, color FROM habits WHERE user_id=?", (uid,)).fetchall():
         week_data = []
         for i in range(6, -1, -1):
-            d = str(date.today() - timedelta(days=i))
+            d    = str(date.today() - timedelta(days=i))
             done = conn.execute(
                 "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (h["id"], d)
             ).fetchone() is not None
@@ -298,18 +316,15 @@ def stats():
         per_habit.append({"id": h["id"], "name": h["name"], "color": h["color"], "week": week_data})
     conn.close()
     return jsonify({
-        "total_habits": total_habits,
-        "done_today": done_today,
-        "avg_rate": avg_rate,
-        "best_streak": best_streak,
-        "per_habit": per_habit
+        "total_habits": total_habits, "done_today": done_today,
+        "avg_rate": avg_rate, "best_streak": best_streak, "per_habit": per_habit
     })
 
 # ─── HELPERS ───
 def calc_streak(conn, habit_id, today_str):
     today_date = date.fromisoformat(today_str)
-    streak = 0
-    current = today_date
+    streak     = 0
+    current    = today_date
     while True:
         done = conn.execute(
             "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?",
@@ -327,10 +342,10 @@ def calc_rate(conn, habit_id, days):
     if not created:
         return 0
     created_date = date.fromisoformat(created["created_at"])
-    today = date.today()
-    start = max(today - timedelta(days=days - 1), created_date)
-    total_days = (today - start).days + 1
-    done_count = conn.execute(
+    today        = date.today()
+    start        = max(today - timedelta(days=days - 1), created_date)
+    total_days   = (today - start).days + 1
+    done_count   = conn.execute(
         "SELECT COUNT(*) FROM completions WHERE habit_id=? AND completed_date >= ? AND completed_date <= ?",
         (habit_id, str(start), str(today))
     ).fetchone()[0]
