@@ -143,8 +143,12 @@ def register():
         "INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
         (username, email, pw_hash)
     )
-    conn.commit()
     user_id = c.lastrowid
+    c.execute(
+        "INSERT INTO habits (user_id, name, icon, color, target_days) VALUES (?,?,?,?,?)",
+        (user_id, "Welcome to HabitFlow", "🎉", "#7c6ef8", 7)
+    )
+    conn.commit()
     conn.close()
 
     session.permanent   = True
