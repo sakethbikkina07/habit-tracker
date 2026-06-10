@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import sqlite3
 import os
 from datetime import date, timedelta
@@ -8,23 +9,28 @@ from functools import wraps
 
 app = Flask(__name__)
 
-# ── SECRET KEY ──────────────────────────────────────────────────────────────
-# On Render: add SECRET_KEY as an environment variable in the dashboard.
-# A hardcoded random key (secrets.token_hex) breaks every session on redeploy.
-app.secret_key = os.environ.get("SECRET_KEY", "dev-fallback-change-me")
+# ── ProxyFix: required on Render so Flask sees HTTPS correctly ───────────────
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# Session cookie settings that work correctly behind Render's HTTPS proxy
-app.config["SESSION_COOKIE_SECURE"]   = True   # only send over HTTPS
-app.config["SESSION_COOKIE_HTTPONLY"] = True   # block JS access
+# ── SECRET KEY ───────────────────────────────────────────────────────────────
+# Set SECRET_KEY as an env var in Render dashboard → Environment.
+# Never use secrets.token_hex() here — it changes every restart and
+# invalidates all sessions (causes the blank-data bug after login).
+app.secret_key = os.environ.get("SECRET_KEY", "habitflow-dev-key-change-in-production")
+
+# ── SESSION COOKIE CONFIG ─────────────────────────────────────────────────────
+# Do NOT set SESSION_COOKIE_SECURE=True here.
+# Render handles HTTPS at the proxy level; Flask sees plain HTTP internally.
+# Setting Secure=True would cause the browser to silently drop the cookie,
+# making every request look unauthenticated (the blank-data bug).
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30  # 30 days
 
-# ── DATABASE PATH ────────────────────────────────────────────────────────────
-# Render's free tier has an ephemeral filesystem — the DB resets on each
-# redeploy unless you attach a Render Disk.
-# To attach a disk: Render dashboard → your service → Disks → Add Disk
-#   Mount path: /data   (or any path you choose)
-# Then set env var  DB_PATH=/data/habits.db  in Render dashboard.
-# Without a disk, fall back to writing next to app.py (works for testing).
+# ── DATABASE PATH ─────────────────────────────────────────────────────────────
+# Free Render instances have ephemeral storage — DB is wiped on redeploy.
+# To persist data: Render dashboard → Disks → Add Disk, mount at /data,
+# then add env var  DB_PATH=/data/habits.db
 DB_PATH = os.environ.get(
     "DB_PATH",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "habits.db")
@@ -32,7 +38,7 @@ DB_PATH = os.environ.get(
 
 CORS(app, supports_credentials=True)
 
-# ─── DB ───
+# ─── DB ───────────────────────────────────────────────────────────────────────
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -75,7 +81,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ─── AUTH DECORATOR ───
+# ─── AUTH DECORATOR ───────────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -87,7 +93,7 @@ def login_required(f):
 def get_current_user_id():
     return session.get('user_id')
 
-# ─── PAGES ───
+# ─── PAGES ────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     if 'user_id' not in session:
@@ -106,10 +112,10 @@ def register_page():
         return redirect(url_for('index'))
     return render_template("auth.html", page="register")
 
-# ─── AUTH API ───
+# ─── AUTH API ─────────────────────────────────────────────────────────────────
 @app.route("/api/auth/register", methods=["POST"])
 def register():
-    data = request.json or {}
+    data     = request.json or {}
     username = data.get("username", "").strip()
     email    = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -123,7 +129,7 @@ def register():
     if "@" not in email:
         return jsonify({"error": "Invalid email address"}), 400
 
-    conn = get_db()
+    conn     = get_db()
     existing = conn.execute(
         "SELECT id FROM users WHERE username=? OR email=?", (username, email)
     ).fetchone()
@@ -132,14 +138,16 @@ def register():
         return jsonify({"error": "Username or email already exists"}), 409
 
     pw_hash = generate_password_hash(password)
-    c = conn.cursor()
-    c.execute("INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
-              (username, email, pw_hash))
+    c       = conn.cursor()
+    c.execute(
+        "INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
+        (username, email, pw_hash)
+    )
     conn.commit()
     user_id = c.lastrowid
     conn.close()
 
-    session.permanent = True
+    session.permanent   = True
     session['user_id']  = user_id
     session['username'] = username
     return jsonify({"message": "Account created", "username": username}), 201
@@ -163,7 +171,7 @@ def login():
     if not user or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid username/email or password"}), 401
 
-    session.permanent = True
+    session.permanent   = True
     session['user_id']  = user['id']
     session['username'] = user['username']
     return jsonify({"message": "Logged in", "username": user['username']})
@@ -179,29 +187,33 @@ def me():
         return jsonify({"error": "Not logged in"}), 401
     return jsonify({"user_id": session['user_id'], "username": session['username']})
 
-# ─── HABITS API (all scoped to current user) ───
+# ─── HABITS API ───────────────────────────────────────────────────────────────
 @app.route("/api/habits", methods=["GET"])
 @login_required
 def get_habits():
-    uid   = get_current_user_id()
-    conn  = get_db()
+    uid    = get_current_user_id()
+    conn   = get_db()
     habits = conn.execute(
         "SELECT * FROM habits WHERE user_id=? ORDER BY created_at", (uid,)
     ).fetchall()
     today  = str(date.today())
     result = []
     for h in habits:
-        hid       = h["id"]
-        streak    = calc_streak(conn, hid, today)
-        total     = conn.execute("SELECT COUNT(*) FROM completions WHERE habit_id=?", (hid,)).fetchone()[0]
+        hid        = h["id"]
+        streak     = calc_streak(conn, hid, today)
+        total      = conn.execute(
+            "SELECT COUNT(*) FROM completions WHERE habit_id=?", (hid,)
+        ).fetchone()[0]
         done_today = conn.execute(
-            "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (hid, today)
+            "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?",
+            (hid, today)
         ).fetchone() is not None
         week = []
         for i in range(6, -1, -1):
             d    = str(date.today() - timedelta(days=i))
             done = conn.execute(
-                "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (hid, d)
+                "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?",
+                (hid, d)
             ).fetchone() is not None
             week.append({"date": d, "done": done})
         rate = calc_rate(conn, hid, 30)
@@ -227,7 +239,7 @@ def add_habit():
     c    = conn.cursor()
     c.execute(
         "INSERT INTO habits (user_id, name, icon, color, target_days) VALUES (?,?,?,?,?)",
-        (uid, name, data.get("icon","⭐"), data.get("color","#6366f1"), data.get("target_days", 7))
+        (uid, name, data.get("icon", "⭐"), data.get("color", "#6366f1"), data.get("target_days", 7))
     )
     conn.commit()
     new_id = c.lastrowid
@@ -240,7 +252,9 @@ def update_habit(habit_id):
     uid  = get_current_user_id()
     data = request.json
     conn = get_db()
-    if not conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone():
+    if not conn.execute(
+        "SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)
+    ).fetchone():
         conn.close()
         return jsonify({"error": "Not found"}), 404
     conn.execute(
@@ -256,7 +270,9 @@ def update_habit(habit_id):
 def delete_habit(habit_id):
     uid  = get_current_user_id()
     conn = get_db()
-    if not conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone():
+    if not conn.execute(
+        "SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)
+    ).fetchone():
         conn.close()
         return jsonify({"error": "Not found"}), 404
     conn.execute("DELETE FROM completions WHERE habit_id=?", (habit_id,))
@@ -272,17 +288,26 @@ def toggle(habit_id):
     data = request.json or {}
     day  = data.get("date", str(date.today()))
     conn = get_db()
-    if not conn.execute("SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)).fetchone():
+    if not conn.execute(
+        "SELECT id FROM habits WHERE id=? AND user_id=?", (habit_id, uid)
+    ).fetchone():
         conn.close()
         return jsonify({"error": "Not found"}), 404
     existing = conn.execute(
-        "SELECT id FROM completions WHERE habit_id=? AND completed_date=?", (habit_id, day)
+        "SELECT id FROM completions WHERE habit_id=? AND completed_date=?",
+        (habit_id, day)
     ).fetchone()
     if existing:
-        conn.execute("DELETE FROM completions WHERE habit_id=? AND completed_date=?", (habit_id, day))
+        conn.execute(
+            "DELETE FROM completions WHERE habit_id=? AND completed_date=?",
+            (habit_id, day)
+        )
         done = False
     else:
-        conn.execute("INSERT INTO completions (habit_id, completed_date) VALUES (?,?)", (habit_id, day))
+        conn.execute(
+            "INSERT INTO completions (habit_id, completed_date) VALUES (?,?)",
+            (habit_id, day)
+        )
         done = True
     conn.commit()
     conn.close()
@@ -294,33 +319,45 @@ def stats():
     uid   = get_current_user_id()
     conn  = get_db()
     today = str(date.today())
-    total_habits = conn.execute("SELECT COUNT(*) FROM habits WHERE user_id=?", (uid,)).fetchone()[0]
-    done_today   = conn.execute(
+
+    total_habits = conn.execute(
+        "SELECT COUNT(*) FROM habits WHERE user_id=?", (uid,)
+    ).fetchone()[0]
+    done_today = conn.execute(
         """SELECT COUNT(DISTINCT c.habit_id) FROM completions c
            JOIN habits h ON c.habit_id=h.id
-           WHERE h.user_id=? AND c.completed_date=?""", (uid, today)
+           WHERE h.user_id=? AND c.completed_date=?""",
+        (uid, today)
     ).fetchone()[0]
     habits      = conn.execute("SELECT id FROM habits WHERE user_id=?", (uid,)).fetchall()
     rates       = [calc_rate(conn, h["id"], 30) for h in habits]
     avg_rate    = round(sum(rates) / len(rates), 1) if rates else 0
     best_streak = max([calc_streak(conn, h["id"], today) for h in habits], default=0)
-    per_habit   = []
-    for h in conn.execute("SELECT id, name, color FROM habits WHERE user_id=?", (uid,)).fetchall():
+
+    per_habit = []
+    for h in conn.execute(
+        "SELECT id, name, color FROM habits WHERE user_id=?", (uid,)
+    ).fetchall():
         week_data = []
         for i in range(6, -1, -1):
             d    = str(date.today() - timedelta(days=i))
             done = conn.execute(
-                "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?", (h["id"], d)
+                "SELECT 1 FROM completions WHERE habit_id=? AND completed_date=?",
+                (h["id"], d)
             ).fetchone() is not None
             week_data.append({"date": d, "done": done})
-        per_habit.append({"id": h["id"], "name": h["name"], "color": h["color"], "week": week_data})
+        per_habit.append({
+            "id": h["id"], "name": h["name"],
+            "color": h["color"], "week": week_data
+        })
     conn.close()
     return jsonify({
         "total_habits": total_habits, "done_today": done_today,
-        "avg_rate": avg_rate, "best_streak": best_streak, "per_habit": per_habit
+        "avg_rate": avg_rate, "best_streak": best_streak,
+        "per_habit": per_habit
     })
 
-# ─── HELPERS ───
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
 def calc_streak(conn, habit_id, today_str):
     today_date = date.fromisoformat(today_str)
     streak     = 0
@@ -331,14 +368,16 @@ def calc_streak(conn, habit_id, today_str):
             (habit_id, str(current))
         ).fetchone()
         if done:
-            streak += 1
+            streak  += 1
             current -= timedelta(days=1)
         else:
             break
     return streak
 
 def calc_rate(conn, habit_id, days):
-    created = conn.execute("SELECT created_at FROM habits WHERE id=?", (habit_id,)).fetchone()
+    created = conn.execute(
+        "SELECT created_at FROM habits WHERE id=?", (habit_id,)
+    ).fetchone()
     if not created:
         return 0
     created_date = date.fromisoformat(created["created_at"])
@@ -346,11 +385,12 @@ def calc_rate(conn, habit_id, days):
     start        = max(today - timedelta(days=days - 1), created_date)
     total_days   = (today - start).days + 1
     done_count   = conn.execute(
-        "SELECT COUNT(*) FROM completions WHERE habit_id=? AND completed_date >= ? AND completed_date <= ?",
+        """SELECT COUNT(*) FROM completions
+           WHERE habit_id=? AND completed_date >= ? AND completed_date <= ?""",
         (habit_id, str(start), str(today))
     ).fetchone()[0]
     return round((done_count / total_days) * 100, 1) if total_days > 0 else 0
 
 if __name__ == "__main__":
     init_db()
-    app.run(host='0.0.0.0' , debug=True)
+    app.run(host='0.0.0.0', debug=True)
